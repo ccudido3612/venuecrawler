@@ -1,0 +1,49 @@
+# 臺北市運動中心即時人數：每 15 分鐘執行一次 crawler.py，把新資料存回 data/ 資料夾
+name: 抓取運動中心人數
+
+on:
+  schedule:
+    # GitHub 排程使用 UTC 時間，台北時間 = UTC + 8
+    - cron: "*/15 22-23 * * *"   # 台北 06:00–07:45
+    - cron: "*/15 0-14 * * *"    # 台北 08:00–22:45
+  workflow_dispatch:              # 可在 Actions 頁面手動執行（測試用）
+
+permissions:
+  contents: write                 # 允許把新資料 commit 回 repo
+
+concurrency:
+  group: crawl                    # 同一時間只跑一個，避免兩次同時寫入
+  cancel-in-progress: false
+
+jobs:
+  crawl:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: 取得 repo 內容
+        uses: actions/checkout@v4
+
+      - name: 安裝 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 安裝套件
+        run: pip install requests
+
+      - name: 抓一次人數
+        run: python crawler.py
+
+      - name: 把新資料存回 repo
+        if: always()              # 抓取失敗時也要把 errors.log 存回去
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+          git add data/
+          if git diff --cached --quiet; then
+            echo "沒有新資料"
+            exit 0
+          fi
+          git commit -m "data: $(TZ=Asia/Taipei date '+%Y-%m-%d %H:%M')"
+          git pull --rebase
+          git push
